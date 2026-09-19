@@ -1,0 +1,118 @@
+:root {
+  --bg: #16131f;
+  --panel: #221d33;
+  --panel-2: #2c2542;
+  --text: #ece8f6;
+  --muted: #a39cb8;
+  --accent: #b18cff;
+  --ftr: #8a5cc9;
+  --byd: #c9364f;
+  --etr: #7b55b8;
+  --prs: #6b9e3a;
+  --pst: #3a8fc9;
+  --ok: #58c98b;
+  --warn: #e6b450;
+  --err: #e0606f;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px;
+  background: linear-gradient(180deg, #2a2145, #1c1830);
+  border-bottom: 1px solid #3a3158;
+}
+.label { font-size: 11px; letter-spacing: 0.15em; color: var(--muted); }
+.total { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.add-btn, button, .button {
+  display: inline-block;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #1a1030;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button.secondary, .settings button, .settings .button { background: var(--panel-2); color: var(--text); font-weight: 500; }
+button.danger { background: #4a2330; color: #ffb3bf; }
+button:disabled { opacity: 0.5; cursor: default; }
+
+main { max-width: 760px; margin: 0 auto; padding: 8px 16px 40px; }
+h2 { font-size: 16px; margin: 20px 0 8px; color: var(--muted); font-weight: 600; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+
+.drop {
+  position: fixed; inset: 0; z-index: 2;
+  display: grid; place-items: center;
+  background: rgba(22, 19, 31, 0.85);
+  border: 3px dashed var(--accent);
+  font-size: 22px;
+}
+
+/* 登録結果カード */
+.card {
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border-left: 4px solid var(--muted);
+}
+.card.saved { border-left-color: var(--ok); }
+.card.pending { border-left-color: var(--warn); }
+.card.error, .card.duplicate { border-left-color: var(--err); }
+.card.undone { opacity: 0.5; }
+.card .title { font-weight: 700; }
+.card .line { font-variant-numeric: tabular-nums; }
+.card .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.card select { flex: 1 1 200px; min-width: 0; padding: 8px; border-radius: 8px; background: var(--panel-2); color: var(--text); border: 1px solid #3a3158; font: inherit; }
+.card button { padding: 6px 12px; font-size: 14px; }
+.up { color: var(--ok); }
+
+/* B50 表 */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+td { padding: 7px 6px; border-bottom: 1px solid #2b2540; vertical-align: middle; }
+td.rank { color: var(--muted); width: 2.5em; text-align: right; }
+td.song { max-width: 0; width: 100%; }
+td.song .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.song .meta { font-size: 12px; color: var(--muted); }
+td.pot { text-align: right; font-weight: 700; }
+td.score { text-align: right; white-space: nowrap; }
+tr.top10 td.rank { color: var(--accent); font-weight: 700; }
+tr.cut td { border-bottom: 2px solid #4a3f6e; }
+
+.diff { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 11px; font-weight: 700; color: #fff; margin-right: 4px; }
+.diff.Future { background: var(--ftr); }
+.diff.Beyond { background: var(--byd); }
+.diff.Eternal { background: var(--etr); }
+.diff.Present { background: var(--prs); }
+.diff.Past { background: var(--pst); }
+.clear { display: inline-block; width: 1.4em; text-align: center; border-radius: 4px; font-size: 11px; font-weight: 700; margin-left: 4px; background: var(--panel-2); }
+.clear.PM { color: #9fd8ff; }
+.clear.FR { color: #ff9fd8; }
+
+.settings { margin-top: 28px; background: var(--panel); border-radius: 12px; padding: 10px 14px; }
+.settings summary { cursor: pointer; color: var(--muted); }
+.settings .buttons { display: flex; flex-wrap: wrap; gap: 8px; }

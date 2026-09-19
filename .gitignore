@@ -1,0 +1,16 @@
+# 個人データ (スコア・スクショ・トークン入りスクリプト) は公開しない
+discord_dl_bot/
+data/records/
+data/results_raw/
+data/results_gt/
+data/backup*.json
+data/arcaea.db
+# Discord bot 版 (PWA 版に置き換え、未使用)
+bot/
+
+# 環境・生成物
+.venv/
+__pycache__/
+.DS_Store
+web/node_modules/
+web/dist/
