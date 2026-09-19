@@ -29,7 +29,19 @@
       </section>
 
       <section>
-        <h2>Best 50</h2>
+        <div class="section-head">
+          <h2>Best 50</h2>
+          <button id="make-image" class="secondary">ベスト枠画像を作る</button>
+        </div>
+        <div id="image-box" class="image-box" hidden>
+          <label class="name-field">プレイヤー名 <input id="player-name" maxlength="20" placeholder="PLAYER" /></label>
+          <img id="image-preview" alt="ベスト枠画像" />
+          <div class="buttons">
+            <button id="share-image">共有</button>
+            <button id="save-image" class="secondary">画像を保存</button>
+            <button id="close-image" class="secondary">閉じる</button>
+          </div>
+        </div>
         <p id="empty" class="muted" hidden>
           記録がありません。リザルト画面のスクショを追加するか、設定からバックアップを読み込んでください。
         </p>

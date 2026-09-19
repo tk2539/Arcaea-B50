@@ -5,6 +5,7 @@ import type { Rgba } from "../core/image";
 import { type ParseResult, ResultParser, scoreConsistent, UnsupportedSizeError } from "../core/parse";
 import { B50_TOP, type Clear, playPotential } from "../core/potential";
 import { b50, type Backup, exportBackup, importBackup, type NewPlay, type Play, Store } from "../core/store";
+import { loadFonts, renderB50 as drawB50Image } from "./b50image";
 import { browserOcr } from "./ocr";
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
@@ -198,7 +199,58 @@ function download(name: string, text: string) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+// ---- ベスト枠画像 ----
+let imageBlob: Blob | null = null;
+
+function storedName() {
+  try { return localStorage.getItem("playerName") ?? ""; } catch { return ""; }
+}
+
+async function makeImage() {
+  const { top, total } = b50(plays, charts);
+  if (!top.length) return;
+  $<HTMLButtonElement>("#make-image").disabled = true;
+  try {
+    await loadFonts();
+    const canvas = drawB50Image({ playerName: $<HTMLInputElement>("#player-name").value.trim(), total, top, date: new Date() });
+    imageBlob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/png"));
+    const img = $<HTMLImageElement>("#image-preview");
+    if (img.src) URL.revokeObjectURL(img.src);
+    img.src = imageBlob ? URL.createObjectURL(imageBlob) : "";
+    $("#image-box").hidden = false;
+    $<HTMLButtonElement>("#share-image").hidden = !imageFile() || !navigator.canShare?.({ files: [imageFile()!] });
+  } finally {
+    $<HTMLButtonElement>("#make-image").disabled = false;
+  }
+}
+
+function imageFile() {
+  return imageBlob && new File([imageBlob], `arcaea-b50-${localIso(new Date()).slice(0, 10)}.png`, { type: "image/png" });
+}
+
 function bindUi() {
+  const nameInput = $<HTMLInputElement>("#player-name");
+  nameInput.value = storedName();
+  nameInput.onchange = () => {
+    try { localStorage.setItem("playerName", nameInput.value.trim()); } catch { /* 保存できなくても動く */ }
+    if (!$("#image-box").hidden) makeImage();
+  };
+  $("#make-image").onclick = makeImage;
+  $("#close-image").onclick = () => { $("#image-box").hidden = true; };
+  $("#save-image").onclick = () => {
+    const f = imageFile();
+    if (!f) return;
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(f);
+    a.download = f.name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $("#share-image").onclick = async () => {
+    const f = imageFile();
+    if (f) await navigator.share({ files: [f] }).catch(() => {}); // キャンセルは無視
+  };
+
   $<HTMLInputElement>("#file").onchange = async (e) => {
     const input = e.target as HTMLInputElement;
     const files = [...(input.files ?? [])];
