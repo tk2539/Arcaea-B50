@@ -18,4 +18,7 @@ export const REGIONS = {
   ptt_delta: [1272, 60, 130, 42],
 } satisfies Record<string, Rect>;
 
+// ジャケット (リザルト画面左側の正方形。枠線を避けて少し内側)
+export const JACKET: Rect = [262, 407, 553, 553];
+
 export type RegionKey = keyof typeof REGIONS;

@@ -32,7 +32,22 @@ const CLEAR_STYLE: Record<string, { label: string; fill: string; text: string }>
   TL: { label: "L", fill: "#333", text: "#bbb" },
 };
 
-export interface ImageOptions { playerName: string; total: number; top: Best[]; date: Date }
+export interface ImageOptions {
+  playerName: string; total: number; top: Best[]; date: Date;
+  jackets?: Map<string, ImageBitmap>; // chartId -> ユーザー自身のスクショから切り出したジャケット
+}
+
+/** 譜面のジャケットを探す。PST/PRS/FTR は同じ絵なので互いに代用し、BYD/ETR は絵が違うことがあるので完全一致のみ */
+function findJacket(jackets: Map<string, ImageBitmap> | undefined, chart: Chart) {
+  if (!jackets) return undefined;
+  const exact = jackets.get(chart.id);
+  if (exact || chart.difficulty === "Beyond" || chart.difficulty === "Eternal") return exact;
+  for (const d of ["Future", "Present", "Past"]) {
+    const j = jackets.get(`${chart.songId}:${d}`);
+    if (j) return j;
+  }
+  return undefined;
+}
 
 export function grade(score: number): string {
   if (score >= 9_900_000) return "EX+";
@@ -71,7 +86,7 @@ export function renderB50(opts: ImageOptions): HTMLCanvasElement {
   drawHeader(ctx, opts);
   opts.top.forEach((b, i) => {
     const col = i % COLS, row = Math.floor(i / COLS);
-    drawCell(ctx, GRID_X + col * (CELL_W + 22), HEADER_H + row * ROW_H, i + 1, b);
+    drawCell(ctx, GRID_X + col * (CELL_W + 22), HEADER_H + row * ROW_H, i + 1, b, findJacket(opts.jackets, b.chart));
   });
   // 上位10 (2倍計上) と11位以降の境目
   if (opts.top.length > B50_TOP) {
@@ -254,7 +269,7 @@ function drawPanel(ctx: CanvasRenderingContext2D, x: number, y: number, chart: C
   ctx.strokeRect(x + 1, y + 1, PANEL - 2, PANEL - 2);
 }
 
-function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, rank: number, b: Best) {
+function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, rank: number, b: Best, jacket?: ImageBitmap) {
   const isTop = rank <= B50_TOP;
   // 土台
   ctx.fillStyle = "rgba(58, 44, 92, 0.78)";
@@ -298,7 +313,14 @@ function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, rank: num
 
   // ジャケット位置のパネル
   const px = x + CELL_W - PANEL - 14, py = y + 30;
-  drawPanel(ctx, px, py, b.chart);
+  if (jacket) {
+    ctx.drawImage(jacket, px, py, PANEL, PANEL);
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + 1, py + 1, PANEL - 2, PANEL - 2);
+  } else {
+    drawPanel(ctx, px, py, b.chart);
+  }
 
   // レベルのひし形 (右上)
   const [c1, c2] = DIFF_COLOR[b.chart.difficulty];
@@ -320,11 +342,13 @@ function drawCell(ctx: CanvasRenderingContext2D, x: number, y: number, rank: num
   ctx.textAlign = "left";
 
   // スコア (パネル下部に重ねる)
-  const sg = ctx.createLinearGradient(0, py + PANEL - 44, 0, py + PANEL);
-  sg.addColorStop(0, "rgba(10,8,20,0)");
-  sg.addColorStop(1, "rgba(10,8,20,0.85)");
+  // ジャケットの下部に帯を敷いて読みやすくする (Arcaea Online 画像から切り出したジャケットに焼き込まれたスコアも隠す)
+  const sg = ctx.createLinearGradient(0, py + PANEL - 48, 0, py + PANEL);
+  sg.addColorStop(0, "rgba(10,8,20,0.55)");
+  sg.addColorStop(0.35, "rgba(10,8,20,0.93)");
+  sg.addColorStop(1, "rgba(10,8,20,0.97)");
   ctx.fillStyle = sg;
-  ctx.fillRect(px, py + PANEL - 44, PANEL, 44);
+  ctx.fillRect(px, py + PANEL - 48, PANEL, 48);
   ctx.fillStyle = "#fff";
   // 右下のクリアのひし形と重ならないよう、パネル幅 - ひし形分に収める
   ctx.font = `600 27px ${NUM_FONT}`;

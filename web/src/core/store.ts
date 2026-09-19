@@ -24,8 +24,14 @@ export interface Play {
 
 export type NewPlay = Omit<Play, "id" | "dedupeKey" | "createdAt">;
 
+// ジャケットはユーザー自身のスクショから切り出してブラウザ内にだけ保存する (配布はしない)
+export type JacketSource = "result" | "arcaea_online";
+export interface Jacket { chartId: string; blob: Blob; source: JacketSource; updatedAt: string }
+const JACKET_PRIORITY: Record<JacketSource, number> = { arcaea_online: 0, result: 1 }; // リザルト画面の方が高解像度で隠れもない
+
 interface Schema extends DBSchema {
   plays: { key: number; value: Play; indexes: { dedupeKey: string; imageHash: string } };
+  jackets: { key: string; value: Jacket };
 }
 
 // 同じ記録の二重登録を防ぐキー (同じスクショを2回、送信中と送信後の両方を撮った など)
@@ -35,11 +41,14 @@ export class Store {
   private constructor(private db: IDBPDatabase<Schema>) {}
 
   static async open(name = "arcaea-b50") {
-    const db = await openDB<Schema>(name, 1, {
-      upgrade(db) {
-        const s = db.createObjectStore("plays", { keyPath: "id", autoIncrement: true });
-        s.createIndex("dedupeKey", "dedupeKey", { unique: true });
-        s.createIndex("imageHash", "imageHash");
+    const db = await openDB<Schema>(name, 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          const s = db.createObjectStore("plays", { keyPath: "id", autoIncrement: true });
+          s.createIndex("dedupeKey", "dedupeKey", { unique: true });
+          s.createIndex("imageHash", "imageHash");
+        }
+        if (oldVersion < 2) db.createObjectStore("jackets", { keyPath: "chartId" });
       },
     });
     return new Store(db);
@@ -72,6 +81,19 @@ export class Store {
 
   async clear() {
     await this.db.clear("plays");
+    await this.db.clear("jackets");
+  }
+
+  /** ジャケットを保存。既存のものより優先度が低い取得元なら上書きしない */
+  async putJacket(chartId: string, blob: Blob, source: JacketSource) {
+    const cur = await this.db.get("jackets", chartId);
+    if (cur && JACKET_PRIORITY[cur.source] > JACKET_PRIORITY[source]) return false;
+    await this.db.put("jackets", { chartId, blob, source, updatedAt: new Date().toISOString() });
+    return true;
+  }
+
+  allJackets() {
+    return this.db.getAll("jackets");
   }
 }
 
@@ -100,16 +122,36 @@ export function b50(plays: Play[], charts: Map<string, Chart>, at?: string) {
 }
 
 // ---- バックアップ (JSON の書き出し・読み込み) ----
-export interface Backup { app: "arcaea-b50"; version: 1; exportedAt: string; plays: NewPlay[] }
+export interface BackupJacket { chartId: string; source: JacketSource; dataUrl: string }
+export interface Backup {
+  app: "arcaea-b50"; version: 1; exportedAt: string; plays: NewPlay[];
+  jackets?: BackupJacket[]; // 任意 (自分のスクショから切り出したもの)
+}
+
+function blobToDataUrl(b: Blob): Promise<string> {
+  return new Promise((ok, ng) => {
+    const r = new FileReader();
+    r.onload = () => ok(r.result as string);
+    r.onerror = ng;
+    r.readAsDataURL(b);
+  });
+}
 
 export async function exportBackup(store: Store): Promise<Backup> {
   const plays = (await store.all()).map(({ id, dedupeKey, createdAt, ...p }) => p);
-  return { app: "arcaea-b50", version: 1, exportedAt: new Date().toISOString(), plays };
+  const jackets = await Promise.all((await store.allJackets()).map(async (j) =>
+    ({ chartId: j.chartId, source: j.source, dataUrl: await blobToDataUrl(j.blob) })));
+  return { app: "arcaea-b50", version: 1, exportedAt: new Date().toISOString(), plays, jackets };
 }
 
 export async function importBackup(store: Store, b: Backup) {
   if (b.app !== "arcaea-b50" || b.version !== 1) throw new Error("このアプリのバックアップではありません");
   let added = 0;
   for (const p of b.plays) if ((await store.add(p)) !== null) added++;
-  return { added, skipped: b.plays.length - added };
+  let jackets = 0;
+  for (const j of b.jackets ?? []) {
+    const blob = await (await fetch(j.dataUrl)).blob();
+    if (await store.putJacket(j.chartId, blob, j.source)) jackets++;
+  }
+  return { added, skipped: b.plays.length - added, jackets };
 }

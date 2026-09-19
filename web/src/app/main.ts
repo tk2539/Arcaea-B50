@@ -4,6 +4,7 @@ import { DigitReader } from "../core/digits";
 import type { Rgba } from "../core/image";
 import { type ParseResult, ResultParser, scoreConsistent, UnsupportedSizeError } from "../core/parse";
 import { B50_TOP, type Clear, playPotential } from "../core/potential";
+import { BASE_W, JACKET } from "../core/regions";
 import { b50, type Backup, exportBackup, importBackup, type NewPlay, type Play, Store } from "../core/store";
 import { loadFonts, renderB50 as drawB50Image } from "./b50image";
 import { browserOcr } from "./ocr";
@@ -38,16 +39,30 @@ async function sha256(buf: ArrayBuffer) {
   return Array.from(h, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function decode(file: Blob): Promise<Rgba> {
+async function decode(file: Blob): Promise<{ rgba: Rgba; canvas: HTMLCanvasElement }> {
   const bmp = await createImageBitmap(file);
-  const c = document.createElement("canvas");
-  c.width = bmp.width;
-  c.height = bmp.height;
-  const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  const canvas = document.createElement("canvas");
+  canvas.width = bmp.width;
+  canvas.height = bmp.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.drawImage(bmp, 0, 0);
   bmp.close();
-  return ctx.getImageData(0, 0, c.width, c.height);
+  return { rgba: ctx.getImageData(0, 0, canvas.width, canvas.height), canvas };
 }
+
+/** リザルト画面からジャケットを切り出す (256px の JPEG) */
+function cropJacket(src: HTMLCanvasElement): Promise<Blob | null> {
+  const f = src.width / BASE_W; // 同じ比率の別解像度にも対応
+  const [x, y, w, h] = JACKET;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d")!;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(src, x * f, y * f, w * f, h * f, 0, 0, 256, 256);
+  return new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.85));
+}
+
+type JacketCrop = () => Promise<Blob | null>;
 
 // ---- 表示 ----
 function renderB50() {
@@ -84,8 +99,11 @@ function addCard(cls: string, html: string): HTMLDivElement {
 
 // ---- 登録 ----
 async function save(chart: Chart, res: Pick<ParseResult, "score" | "highScore" | "clear" | "pure" | "far" | "lost">,
-  playedAt: string, imageHash: string, card: HTMLDivElement) {
+  playedAt: string, imageHash: string, card: HTMLDivElement, jacket: JacketCrop) {
   const before = b50(plays, charts);
+  // ジャケットは記録が重複でも保存する (登録済みのスクショを入れ直してジャケットだけ埋める使い方もできる)
+  const jk = await jacket();
+  if (jk) await store.putJacket(chart.id, jk, "result");
   const base = { chartId: chart.id, playedAt, pure: null, far: null, lost: null, imageHash: null } as const;
   const ids: number[] = [];
   const id = await store.add({ ...base, score: res.score!, clear: res.clear, pure: res.pure, far: res.far,
@@ -122,7 +140,7 @@ async function save(chart: Chart, res: Pick<ParseResult, "score" | "highScore" |
   };
 }
 
-function askChart(res: ParseResult, playedAt: string, imageHash: string, card: HTMLDivElement) {
+function askChart(res: ParseResult, playedAt: string, imageHash: string, card: HTMLDivElement, jacket: JacketCrop) {
   card.className = "card pending";
   card.innerHTML = `
     <div class="title">譜面を特定できませんでした</div>
@@ -140,7 +158,7 @@ function askChart(res: ParseResult, playedAt: string, imageHash: string, card: H
     } else {
       lost = chart.notes - pure - far;
     }
-    await save(chart, { ...res, pure, far, lost }, playedAt, imageHash, card);
+    await save(chart, { ...res, pure, far, lost }, playedAt, imageHash, card, jacket);
   };
 }
 
@@ -155,11 +173,13 @@ async function processFile(file: Blob & { name?: string; lastModified?: number }
       card.innerHTML = `<div>${esc(name)}: このスクショは登録済みです。</div>`;
       return;
     }
-    const res = await parser.parse(await decode(file));
+    const { rgba, canvas } = await decode(file);
+    const res = await parser.parse(rgba);
+    const jacket = () => cropJacket(canvas);
     if (res.score === null) throw new Error("リザルト画面として読み取れませんでした。");
     const playedAt = playedAtOf(file instanceof File ? file : new File([file], name));
-    if (res.confident && res.chart) await save(res.chart, res, playedAt, hash, card);
-    else askChart(res, playedAt, hash, card);
+    if (res.confident && res.chart) await save(res.chart, res, playedAt, hash, card, jacket);
+    else askChart(res, playedAt, hash, card, jacket);
   } catch (e) {
     card.className = "card error";
     const msg = e instanceof UnsupportedSizeError
@@ -212,7 +232,9 @@ async function makeImage() {
   $<HTMLButtonElement>("#make-image").disabled = true;
   try {
     await loadFonts();
-    const canvas = drawB50Image({ playerName: $<HTMLInputElement>("#player-name").value.trim(), total, top, date: new Date() });
+    const jackets = $<HTMLInputElement>("#show-jackets").checked ? await loadJackets() : new Map();
+    const canvas = drawB50Image({ playerName: $<HTMLInputElement>("#player-name").value.trim(), total, top, date: new Date(), jackets });
+    jackets.forEach((b) => b.close());
     imageBlob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/png"));
     const img = $<HTMLImageElement>("#image-preview");
     if (img.src) URL.revokeObjectURL(img.src);
@@ -222,6 +244,15 @@ async function makeImage() {
   } finally {
     $<HTMLButtonElement>("#make-image").disabled = false;
   }
+}
+
+/** 保存済みジャケットを chartId -> ImageBitmap で */
+async function loadJackets() {
+  const out = new Map<string, ImageBitmap>();
+  for (const j of await store.allJackets()) {
+    try { out.set(j.chartId, await createImageBitmap(j.blob)); } catch { /* 壊れた画像は無視 */ }
+  }
+  return out;
 }
 
 function imageFile() {
@@ -236,6 +267,12 @@ function bindUi() {
     if (!$("#image-box").hidden) makeImage();
   };
   $("#make-image").onclick = makeImage;
+  const showJackets = $<HTMLInputElement>("#show-jackets");
+  try { showJackets.checked = localStorage.getItem("showJackets") !== "0"; } catch { /* 既定はオン */ }
+  showJackets.onchange = () => {
+    try { localStorage.setItem("showJackets", showJackets.checked ? "1" : "0"); } catch { /* 保存できなくても動く */ }
+    makeImage();
+  };
   $("#close-image").onclick = () => { $("#image-box").hidden = true; };
   $("#save-image").onclick = () => {
     const f = imageFile();
@@ -291,7 +328,8 @@ function bindUi() {
     try {
       const r = await importBackup(store, JSON.parse(await f.text()) as Backup);
       await reload();
-      addCard("saved", `バックアップから ${r.added} 件を追加しました（重複 ${r.skipped} 件はスキップ）`);
+      addCard("saved", `バックアップから ${r.added} 件を追加しました（重複 ${r.skipped} 件はスキップ）` +
+        (r.jackets ? `。ジャケット ${r.jackets} 件` : ""));
     } catch (err) {
       addCard("error", `バックアップを読み込めませんでした: ${esc((err as Error).message)}`);
     }
