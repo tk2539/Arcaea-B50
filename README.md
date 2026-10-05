@@ -3,6 +3,8 @@
 Arcaea のリザルト画面のスクショから、ベスト枠 (B50) とポテンシャルを計算する Web アプリ (PWA)。
 解析も記録の保存もすべてブラウザ内で行い、サーバーには何も送りません。
 
+現状・設計上の判断・未確認の点は [docs/status.md](docs/status.md) にまとめてある。
+
 ## 使い方
 
 1. アプリを開き、スマホなら「ホーム画面に追加」
@@ -31,4 +33,9 @@ npm run data       # data/tachi + data/overrides.csv から public/data/charts.j
 npm run eval       # 正解データで解析精度を評価 (手元の data/results_* が必要)
 ```
 
+```sh
+python3 scripts/verify.py   # 計算式と定数をベスト枠画像で検証 (手元の data/records が必要)
+```
+
 `core/` `scripts/` は Python 版のプロトタイプ・検証用ツールです。
+解析や計算を変更したら、この2つの検証を通してから push してください。
